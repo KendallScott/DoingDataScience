@@ -1,0 +1,118 @@
+
+twitter_token <- create_token(
+  app = appname,
+  consumer_key = key,
+  consumer_secret = secret,
+  access_token = access_token,
+  access_secret = access_secret)
+
+rstats_tweets <- search_tweets(q = "#rstats", n = 500)
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(tidytext)
+
+
+getTrends(2388929) #  Dallas, US
+install.packages("tigris")
+library(tigris)
+
+#pulling tweets from within 100 miles of me about covid
+covid_tweets <- search_tweets(q="covid",  n = 18000,
+                              include_rts = FALSE, lang = "en", 
+                              geocode = "33.01,-97.06,100mi"
+                              )
+
+covid_tweets = covid_tweets %>% separate(hashtags, into = c("hashtag0","hashtag1","hashtag2","hashtag3","hashtag4"))
+
+covid_tweets$created_at = strptime(covid_tweets$created_at,"%Y-%m-%d",tz="UTC")
+covid_tweets2<-covid_tweets %>% select(created_at, screen_name, status_id, user_id, retweet_count, hashtag0, hashtag1)
+covid_tweets2$hashtag1<-coalesce(covid_tweets2$hashtag0, covid_tweets2$hashtag1)
+covid_tweets_combined<-covid_tweets2
+#pulling the last minimum to go further back
+current_min<- min(covid_tweets2$status_id)
+
+while (current_min>1216391804335087620){
+  covid_tweets <- search_tweets(q="covid",  n = 18000,
+                                include_rts = FALSE, lang = "en", 
+                                geocode = "33.01,-97.06,100mi",
+                                max_id=current_min)
+  #geocode within 100 miles of me
+current_min<- min(covid_tweets$status_id)
+covid_tweets = covid_tweets %>% separate(hashtags, into = c("hashtag0","hashtag1","hashtag2","hashtag3","hashtag4"))
+covid_tweets$created_at = strptime(covid_tweets$created_at,"%Y-%m-%d",tz="UTC")
+covid_tweets<-covid_tweets %>% select(created_at, screen_name, status_id, user_id, retweet_count, quote_count, reply_count, hashtag0, hashtag1, hashtag2, hashtag3, hashtag4)
+covid_tweets$hashtag1<-coalesce(covid_tweets$hashtag0, covid_tweets$hashtag1)
+covid_tweets_combined <- rbind(covid_tweets2, covid_tweets)
+}
+duplicates<-duplicated(covid_tweets$status_id)
+covid_tweets_combined$hashtag1<-coalesce(covid_tweets_combined$hashtag0, covid_tweets_combined$hashtag1)
+
+
+#had trouble getting gather to work here, not sure why
+long_covid_tweets<-covid_tweets_combined %>% select(created_at, retweet_count, hashtag1, hashtag2, hashtag3, hashtag4)
+long_covid_tweets<- gather(long_covid_tweets, created_at, retweet_count, hashtag1:hashtag4, factor_key=FALSE)
+covid_tweets_combined_long <- gather(created_at, screen_name, status_id, user_id, retweet_count, quote_count, reply_count, hashtag1:hashtag4, factor_key=TRUE)#condition is the name of 
+
+
+#hashtag research to do factors
+covid_tweets_hashtags<-covid_tweets_combined %>% group_by( hashtag1) %>% summarise(retweet_count = sum(retweet_count))
+top_covid_tweets_hashtags<-covid_tweets_hashtags %>% arrange(desc(retweet_count))
+
+#creating a factor out of the first hashtag that were retweeted the most
+covid_tweets_combined$Hashfactor <- factor(covid_tweets_combined$hashtag1,levels = c("DoneWithCovid", "COVID", "MutualAid", "WearAMask", "JohnsonTheLiar", "NoMasksInClassNicola", "ScottishIndependence", "fixitjoe", "NoMasksInClass"))
+
+covid_tweets_retweets<-covid_tweets_combined %>% group_by(retweet_count) %>% summarise( count = n()) %>% print(n = 28)
+#getting percentages of each retweet group
+covid_tweets_retweets<-transform(covid_tweets_retweets, percent = ave(count, FUN = prop.table))
+covid_tweets_combined %>% ggplot(aes(x = retweet_count)) + geom_bar(stat = "count")
+
+library(tidyverse)
+
+covid_tweets_combined %>% group_by(retweet_count) %>% 
+  summarise(n = sum(percent == 100)) %>% 
+  ggplot(aes(x = retweet_count, y = n)) +
+  geom_col()
+
+
+
+rt <- search_tweets(
+  "#DoneWithCovid", n = 18000, include_rts = FALSE
+)
+install.packages("GGally")
+library(GGally)
+library(ggplot2)
+covid_tweets_combined %>% select(created_at, retweet_count, covid_tweets_combined$Hashfactor) %>% ggpairs()
+
+covid_tweets_combined<-covid_tweets_combined %>% filter(!is.na(Hashfactor)) 
+covid_tweets_combined<-covid_tweets_combined %>% filter(!is.na(retweet_count)) 
+
+covid_tweets_combined %>% ggplot(aes(x = retweet_count, y=n)) + geom_col()
+covid_tweets_combined$count<-1
+covid_tweets_combined %>% 
+  mutate( RetweetFactor= cut(retweet_count, breaks = c(0,1,20,100, 200, 10000, 10000000000), labels = c("None","Low", "Medium", "High", "Very High", "Enormous"))) %>% 
+  ggplot(aes(x = count, fill = RetweetFactor)) 
+
+covid_tweets$hashtag1<-coalesce(covid_tweets$hashtag0, covid_tweets$hashtag1)
+covid_tweets$Hashfactor <- factor(covid_tweets$hashtag1,levels = c("DoneWithCovid", "COVID", "MutualAid", "WearAMask", "JohnsonTheLiar", "NoMasksInClassNicola", "ScottishIndependence", "fixitjoe", "NoMasksInClass"))
+
+covid_tweets %>% filter(!is.na(Hashfactor)) %>% 
+  ggplot(aes(x = created_at, color = Hashfactor)) + 
+  geom_histogram() + 
+  facet_grid(rows = vars(Hashfactor))
+
+covid_tweets %>% filter(!is.na(Hashfactor)) %>% 
+  ggplot(aes(x = created_at, weight = retweet_count)) + 
+  geom_histogram() + 
+  facet_grid(rows = vars(Hashfactor))
+
+ggplot(w, aes(x=rules, weights=time)) + 
+  geom_bar() + facet_grid(convergence ~ .) +
+  geom_text(stat="bin", aes(label=..count..), color="red", vjust=-0.1) 
+
+covid_tweets_combined %>% filter(!is.na(Hashfactor)) %>%ggplot(aes(x = Hashfactor, y = count)) + geom_col()+ ggtitle("Top Hashtags retweeted: with Covid mentioned in the tweet")
+covid_tweets_combined   %>% filter(retweet_count<15) %>%ggplot(aes(x = retweet_count, y = count)) + geom_col()+ ggtitle("# of Retweets")
+
+covid_tweets_combined %>%
+  filter(retweet_count>0) %>%
+  select(retweet_count, Hashfactor ) %>% ggpairs(aes(color = Hashfactor))
