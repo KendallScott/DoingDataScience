@@ -1,0 +1,171 @@
+Note: one of the methods learned in the last unit will work with the the improper XML code that the URL below yields and the other will create an error.  Use one to get the job done.
+
+You have been hired by a restaurateur to some research on Sushi restaurants in Baltimore.
+You have come across data on the web contained in the following XML file.   	
+Data: https://d396qusza40orc.cloudfront.net/getdata%2Fdata%2Frestaurants.xml
+
+Scrape the XML page for name, zipcode and city council district.  (Use either the XML or rvest package.)
+Make a dataframe with just those columns.
+Are there any Sushi restaurants in Baltimore? (Where the dataset is from.)
+If so, can you estimate how many?
+  Filter the dataframe for just downtown restaurants (Council District 11). 
+Are there any Sushi restaurants downtown?  # research the “grep” function
+  If so, estimate how many “Sushi” restaurants are in Downtown
+Make a barplot of the estimated number of restaurants (Sushi or otherwise) in each council.
+
+install.packages("tidyverse")
+install.packages("leaflet")
+install.packages("tidytext")
+library(rtweet)
+library(tidyr)
+
+
+# whatever name you assigned to your created app
+appname <- "Data_Science_Student_Project"
+## api key (example below is not a real key)
+key <- "oB8HmtvlEAEW5AjXQWVXQXIYW"
+## api secret (example below is not a real key)
+secret <- "jHCApKgzCJuBS88JZz0JskdO4USfUH4fC5yZBEt5r0KnMX8obu"
+access_token<-"2272458139-6xF1WrruyuFl6qLgqmaqt1OykOCihS998Q7D4v0"
+access_secret<-"JaBjDxHIwHD7WTJdXDZGNrktIYFTODfHk2jGXjlUWBJs3"
+
+get_timeline()
+timeline<-get_my_timeline()
+
+twitter_token <- create_token(
+  app = appname,
+  consumer_key = key,
+  consumer_secret = secret,
+  access_token = access_token,
+  access_secret = access_secret)
+
+rstats_tweets <- search_tweets(q = "#rstats", n = 500)
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(tidytext)
+
+
+getTrends(2388929) #  Dallas, US
+install.packages("tigris")
+library(tigris)
+
+#pulling tweets from within 100 miles of me about covid
+covid_tweets <- search_tweets(q="covid",  n = 18000,
+                              include_rts = FALSE, lang = "en", 
+                              geocode = "33.01,-97.06,100mi"
+                              )
+
+covid_tweets = covid_tweets %>% separate(hashtags, into = c("hashtag0","hashtag1","hashtag2","hashtag3","hashtag4"))
+
+covid_tweets$created_at = strptime(covid_tweets$created_at,"%Y-%m-%d",tz="UTC")
+covid_tweets2<-covid_tweets %>% select(created_at, screen_name, status_id, user_id, retweet_count, hashtag0, hashtag1)
+covid_tweets2$hashtag1<-coalesce(covid_tweets2$hashtag0, covid_tweets2$hashtag1)
+covid_tweets_combined<-covid_tweets2
+#pulling the last minimum to go further back
+current_min<- min(covid_tweets2$status_id)
+
+while (current_min>1216391804335087620){
+  covid_tweets <- search_tweets(q="covid",  n = 18000,
+                                include_rts = FALSE, lang = "en", 
+                                geocode = "33.01,-97.06,100mi",
+                                max_id=current_min)
+  #geocode within 100 miles of me
+current_min<- min(covid_tweets$status_id)
+covid_tweets = covid_tweets %>% separate(hashtags, into = c("hashtag0","hashtag1","hashtag2","hashtag3","hashtag4"))
+covid_tweets$created_at = strptime(covid_tweets$created_at,"%Y-%m-%d",tz="UTC")
+covid_tweets<-covid_tweets %>% select(created_at, screen_name, status_id, user_id, retweet_count, quote_count, reply_count, hashtag0, hashtag1, hashtag2, hashtag3, hashtag4)
+covid_tweets$hashtag1<-coalesce(covid_tweets$hashtag0, covid_tweets$hashtag1)
+covid_tweets_combined <- rbind(covid_tweets2, covid_tweets)
+}
+duplicates<-duplicated(covid_tweets$status_id)
+covid_tweets_combined$hashtag1<-coalesce(covid_tweets_combined$hashtag0, covid_tweets_combined$hashtag1)
+
+
+#had trouble getting gather to work here, not sure why
+long_covid_tweets<-covid_tweets_combined %>% select(created_at, retweet_count, hashtag1, hashtag2, hashtag3, hashtag4)
+long_covid_tweets<- gather(long_covid_tweets, created_at, retweet_count, hashtag1:hashtag4, factor_key=FALSE)
+covid_tweets_combined_long <- gather(created_at, screen_name, status_id, user_id, retweet_count, quote_count, reply_count, hashtag1:hashtag4, factor_key=TRUE)#condition is the name of 
+
+
+#hashtag research to do factors
+covid_tweets_hashtags<-covid_tweets_combined %>% group_by( hashtag1) %>% summarise(retweet_count = sum(retweet_count))
+top_covid_tweets_hashtags<-covid_tweets_hashtags %>% arrange(desc(retweet_count))
+
+#creating a factor out of the first hashtag that were retweeted the most
+covid_tweets_combined$Hashfactor <- factor(covid_tweets_combined$hashtag1,levels = c("DoneWithCovid", "COVID", "MutualAid", "WearAMask", "JohnsonTheLiar", "NoMasksInClassNicola", "ScottishIndependence", "fixitjoe", "NoMasksInClass"))
+
+covid_tweets_retweets<-covid_tweets_combined %>% group_by(retweet_count) %>% summarise( count = n()) %>% print(n = 28)
+#getting percentages of each retweet group
+covid_tweets_retweets<-transform(covid_tweets_retweets, percent = ave(count, FUN = prop.table))
+covid_tweets_combined %>% ggplot(aes(x = retweet_count)) + geom_bar(stat = "count")
+
+library(tidyverse)
+
+covid_tweets_combined %>% group_by(retweet_count) %>% 
+  summarise(n = sum(percent == 100)) %>% 
+  ggplot(aes(x = retweet_count, y = n)) +
+  geom_col()
+
+
+
+rt <- search_tweets(
+  "#DoneWithCovid", n = 18000, include_rts = FALSE
+)
+install.packages("GGally")
+library(GGally)
+library(ggplot2)
+covid_tweets_combined %>% select(created_at, retweet_count, covid_tweets_combined$Hashfactor) %>% ggpairs()
+
+covid_tweets_combined<-covid_tweets_combined %>% filter(!is.na(Hashfactor)) 
+covid_tweets_combined<-covid_tweets_combined %>% filter(!is.na(retweet_count)) 
+
+covid_tweets_combined %>% ggplot(aes(x = retweet_count, y=n)) + geom_col()
+covid_tweets_combined$count<-1
+covid_tweets_combined %>% 
+  mutate( RetweetFactor= cut(retweet_count, breaks = c(0,1,20,100, 200, 10000, 10000000000), labels = c("None","Low", "Medium", "High", "Very High", "Enormous"))) %>% 
+  ggplot(aes(x = count, fill = RetweetFactor)) 
+
+covid_tweets_combined %>% filter(!is.na(Hashfactor)) %>%ggplot(aes(x = Hashfactor, y = count)) + geom_col()+ ggtitle("Top Hashtags retweeted: with Covid mentioned in the tweet")
+covid_tweets_combined   %>% filter(retweet_count<15) %>%ggplot(aes(x = retweet_count, y = count)) + geom_col()+ ggtitle("# of Retweets")
+
+covid_tweets_combined %>%
+  filter(retweet_count>0) %>%
+  select(retweet_count, Hashfactor ) %>% ggpairs(aes(color = Hashfactor))
+
+#xml data
+
+install.packages("XML")
+library(httr)
+library(XML)
+library(dplyr)
+#clients
+
+url  <- "https://d396qusza40orc.cloudfront.net/getdata%2Fdata%2Frestaurants.xml"
+raw.result <- GET(url = url, type = "basic")
+raw.result<-gsub(pattern= "</response>|<response>", replacement="", raw.result)
+
+Restaurant_Data <-xmlToDataFrame(raw.result)
+Restaurant_Data %>% select(name, zipcode, councildistrict)
+
+sushi<-grep("Sushi",Restaurant_Data$name,ignore.case = T)
+
+Restaurant_Data %>% filter(councildistrict==11)
+
+sushi<-grep("Sushi",Restaurant_Data$name,ignore.case = T)
+
+library(ggplot2)
+library(tidyverse)
+library(ggthemes)
+library(plotly)
+
+Summary_Restaurant_Data<-Restaurant_Data %>% group_by(councildistrict) %>% summarize(count = n())
+Restaurant_Data %>% ggplot(aes(x = councildistrict)) + geom_bar() + ggtitle("Resaurants by Council District")+xlab("City Council District") + ylab("# of Restaurants")
+
+Summary_Restaurant_Data %>% ggplot(aes(x = councildistrict, y = count)) + geom_bar())
+
+Restaurant_Data %>% ggplot(mapping = aes(x = councildistrict, y=count) + geom_bar()
+
+Restaurant_Data %>% group_by(councildistrict) %>% summarize(count = n())
+                           
+Restaurant_Data  %>% group_by(councildistrict) %>% summarize(number_of_restaurants = count = n() %>% ggplot(aes(x = Position, y = number_of_restaurants)) + geom_col()
